@@ -271,7 +271,36 @@ class Deck:
         elif ".json" in file:
             self.importJSON(file)
 
+    def allCards(self):
+        return [card for card in self.cards.keys()]
+    
+    def nonlands(self):
+        non = []
+        for card in self.allCards():
+            if not (card['types'] == "Land" and card['supertypes'] == "Basic"):
+                non.append(card)
+        return non
+    
+    def lands(self):
+        land = []
+        for card in self.allCards():
+            if card['types'] == "Land" or card['supertypes'] == "Basic":
+                land.append(card)
+        return land
 
+    def filterBy(self, key, values):
+        res = []
+        for card in self.allCards():
+            val = card[key].split(',')
+            valid = True
+            for t in val:
+                if t not in values:
+                    valid=False
+                    break
+            if valid:
+                res.append(card)
+        return res
+        
     def importText(self,file,db):
         with open(homeDir+"/decks/"+file,'r') as f:
             i = f.read().split("\n")
