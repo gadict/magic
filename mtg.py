@@ -277,14 +277,14 @@ class Deck:
     def nonlands(self):
         non = []
         for card in self.allCards():
-            if not (card['types'] == "Land" or card['supertypes'] == "Basic"):
+            if not ("Land" in card['types'].split(",") or 'Basic' in card['supertypes'].split(',')):
                 non.append(card)
         return non
     
     def lands(self):
         land = []
         for card in self.allCards():
-            if card['types'] == "Land" or card['supertypes'] == "Basic":
+            if "Land" in card['types'].split(",") or 'Basic' in card['supertypes'].split(','):
                 land.append(card)
         return land
 
