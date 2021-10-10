@@ -277,7 +277,7 @@ class Deck:
     def nonlands(self):
         non = []
         for card in self.allCards():
-            if not (card['types'] == "Land" and card['supertypes'] == "Basic"):
+            if not (card['types'] == "Land" or card['supertypes'] == "Basic"):
                 non.append(card)
         return non
     
