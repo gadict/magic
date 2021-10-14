@@ -1,7 +1,8 @@
 from mtg import connectDB
-from mtg import Card
+from mtg import Card, homeDir
 import sqlite3
 from sqlite3 import Error
+import os
 
 con = connectDB()
 con.isolation_level = None
@@ -37,7 +38,9 @@ while True:
         line = input("Save to file? ")
         if line != "":
             line = input("filename: ")
-            with open(f"lists/{line}", 'a+') as f:
+            if not os.path.exists(homeDir+"/lists"):
+                os.mkdir(homeDir+"/lists")
+            with open(f"{homeDir}/lists/{line}", 'a+') as f:
                 line = input("Just the names? ")
                 if line != "":
                     for x in out:

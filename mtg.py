@@ -108,7 +108,6 @@ class Card:
             query = f"SELECT status FROM legalities WHERE format='{_format}' AND uuid='{self.cardInfo['uuid']}';"
             cur.execute(query)
             res = cur.fetchone()
-            print (res)
             if res[0] == "Legal":
                 return True
             else:
@@ -116,24 +115,25 @@ class Card:
 
     def verifyCard(self, cur):
         self.verified=False
+        quote = "'" if '"' in self.cardInfo['name'] else '"'
         find_card_set = f"""
         SELECT {','.join([x for x in self.cardInfo.keys() if x not in ['isFoil','category']])}
-        FROM cards WHERE name LIKE "{self.cardInfo["name"]}%" 
+        FROM cards WHERE name LIKE {quote}{self.cardInfo["name"]}%{quote} 
         AND setCode='{self.cardInfo["setCode"]}';"""
 
         find_card = f"""
         SELECT {','.join([x for x in self.cardInfo.keys() if x not in ['isFoil','category']])}
-        FROM cards WHERE name LIKE "{self.cardInfo["name"]}%" 
+        FROM cards WHERE name LIKE {quote}{self.cardInfo["name"]}%{quote} 
         AND availability LIKE '%paper%';"""
 
         find_card_exact = f"""
         SELECT {','.join([x for x in self.cardInfo.keys() if x not in ['isFoil','category']])}
-        FROM cards WHERE name="{self.cardInfo["name"]}" 
+        FROM cards WHERE name={quote}{self.cardInfo["name"]}{quote} 
         AND availability LIKE '%paper%';"""
 
         find_card_set_exact = f"""
         SELECT {','.join([x for x in self.cardInfo.keys() if x not in ['isFoil','category']])}
-        FROM cards WHERE name="{self.cardInfo["name"]}" 
+        FROM cards WHERE name={quote}{self.cardInfo["name"]}{quote} 
         AND setCode='{self.cardInfo["setCode"]}';"""
 
         res = []
@@ -172,7 +172,7 @@ class Card:
 
     def verifyByUUID(self,uuid,db):
         self.verified = False
-        query = "SELECT {','.join([x for x in self.cardInfo.keys() if x not in ['isFoil','category']])} FROM cards WHERE uuid={uuid};";
+        query = f"""SELECT {','.join([x for x in self.cardInfo.keys() if x not in ['isFoil','category']])} FROM cards WHERE uuid={uuid};""";
         db.execute(query)
         res = db.fetchone()
         if res is None:
@@ -373,25 +373,26 @@ class Deck:
                 os.mkdir(directory)
         
         for card in self.cards:
-            fix = ""
-            if card['setCode'] == "CON":
-                fix = "_"
-            artFilename = homeDir+f"\\art\\{card['setCode']+fix}\\{card['name'].replace('/','-')}.jpg"
-            artFilename1 = homeDir+f"\\art\\{card['setCode']+fix}\\{card['name'].replace('/','-')}-back.jpg"
-            newFilename = f"{directory}\\{card['name'].replace('/','-')}_({card['setCode']}).jpg"
-            newFilename1 = f"{directory}\\{card['name'].replace('/','-')}_({card['setCode']})-back.jpg"
-            if not os.path.exists(artFilename):
-                card.downloadArt()
+            if card.Verified():
+                fix = ""
+                if card['setCode'] == "CON":
+                    fix = "_"
+                artFilename = homeDir+f"\\art\\{card['setCode']+fix}\\{card['name'].replace('/','-')}.jpg"
+                artFilename1 = homeDir+f"\\art\\{card['setCode']+fix}\\{card['name'].replace('/','-')}-back.jpg"
+                newFilename = f"{directory}\\{card['name'].replace('/','-')}_({card['setCode']}).jpg"
+                newFilename1 = f"{directory}\\{card['name'].replace('/','-')}_({card['setCode']})-back.jpg"
+                if not os.path.exists(artFilename):
+                    card.downloadArt()
 
-            with open(artFilename, 'rb') as _if:
-                image = _if.read()
-                with open(newFilename, 'wb') as of:
-                    of.write(image)
-            if card['otherFaceIds'] != "None":
-                with open(artFilename1, 'rb') as _if:
+                with open(artFilename, 'rb') as _if:
                     image = _if.read()
-                with open(newFilename1, 'wb') as of:
-                    of.write(image)
+                    with open(newFilename, 'wb') as of:
+                        of.write(image)
+                if card['otherFaceIds'] != "None":
+                    with open(artFilename1, 'rb') as _if:
+                        image = _if.read()
+                    with open(newFilename1, 'wb') as of:
+                        of.write(image)
 
     def __getitem__(self, name):
         return self.findCard(name)
