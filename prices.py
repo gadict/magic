@@ -1,135 +1,74 @@
-from mtg import Card
-from mtg import Deck
-from mtg import connectDB
-from mtg import homeDir
-import sys
-import csv
-from os.path import exists
+from mtg import *
+import pandas as pd
+import os
 import json
-import sqlite3
 
-tcgPrice = open(homeDir+"/data/tcg.json","r")
-tcgPrices = json.loads(tcgPrice.read())
-tcgPrice.close()
+def paths(uuid):
+    return {"TCG":[f"{homeDir}/Data/Prices/TCG/normal/{uuid}.json",f"{homeDir}/Data/Prices/TCG/foil/{uuid}.json"],"CK":[f"{homeDir}/Data/Prices/CK/normal/{uuid}.json",f"{homeDir}/Data/Prices/CK/foil/{uuid}.json"]}
 
-ckPrice = open(homeDir+"/data/ck.json","r")
-ckPrices = json.loads(ckPrice.read())
-ckPrice.close()
+def insertCheapest(p):
+    cheapestMarkets = pd.eval("p.TCG - p.CK < 0")
+    cheaper = lambda x: "TCG" if x else "CK"
+    cheapestMarkets.normal = cheapestMarkets.normal.apply(cheaper)
+    cheapestMarkets.foil = cheapestMarkets.foil.apply(cheaper)
+    p[("Cheapest","normal")] = cheapestMarkets.normal
+    p[("Cheapest",'foil')] = cheapestMarkets.foil
+    return p
 
-def getCheapestPrinting(card,db):
-    query = f"""SELECT name, setCode, uuid FROM cards WHERE name="{card['name']}" AND availability LIKE '%paper%';"""
+def getPrices(card):
+    structure = [(x,y) for x in ['TCG','CK'] for y in ['normal','foil']]
+    structure = pd.MultiIndex.from_tuples(structure)
+    path = paths(card['uuid'])
+    prices = [[]]
+    for market in path:
+        for p in path[market]:
+            if os.path.exists(p):
+                with open(p,'r') as f:
+                    history = json.loads(f.read())
+                    price = history[max(history.keys())]*card['qty'] if card['qty'] else 1
+                    prices[0].append(price)
+            else:
+                prices[0].append(None)
+    return pd.DataFrame(prices,[(card['name'],card['setCode'])],structure)
 
-    if not card.Verified():
-        card.verifyCard(db)
+def deckPrices(deck,file=None):
+    prices = []
+    data = deck.data if type(deck) is Deck else deck
+    for x,card in data.iterrows():
+        p = getPrices(Card.fromData(card))
+        prices.append(p)
+    prices = pd.concat(prices,axis=0)
 
-    if not card.Verified():
-        return 0
-    
-    db.execute(query)
-    printings = db.fetchall()
+    if file:
+        with open(file,'w') as f:
+            f.write(prices.to_csv())
+    return prices
 
-    if len(printings) == 0:
-        return 0.0
-    
-    cPrice = 100000000.00
-    cSet = ""
+def cheapestPrinting(card):
+    printings = find_card(card['name'])
+    printings['qty'] = 1
+    p = deckPrices(printings)
+    m = p.min()
+    pairs = [(x,y) for x in ['TCG','CK'] for y in ['normal','foil']]
+    indeces = pd.MultiIndex.from_tuples(pairs)
+    cheap = [[]]
+    for pair in pairs:
+        cheap[0].append(p.loc[p[pair] == m[pair]].index[0][1])
 
-    for x in printings:
-        if x[2] in tcgPrices["data"].keys():
-            price = tcgPrices["data"][x[2]]
-            c = float(price[max(price.keys())])
-            if c < cPrice:
-                cPrice = c
-                cSet = x[1]
-        elif x[2] in ckPrices["data"].keys():
-            price = ckPrices["data"][x[2]]
-            c = float(price[max(price.keys())])
-            if c < cPrice:
-                cPrice = c
-                cSet = x[1]
+    return pd.DataFrame(cheap,[card['name']],indeces)
 
-    if cSet == "":
-        return 0
-    if cSet != card['setCode']:
-        card.cardInfo['setCode'] = cSet
-        card.cardInfo['isFoil'] = ""
-        card.verifyCard(db)
-    return float(cPrice)
+def deckPrintings(deck):
+    printings = []
+    for x,card in deck.data.iterrows():
+        printings.append(cheapestPrinting(card))
+    printings = pd.concat(printings)
+    return printings
 
-def getPrice(card):
-    if card['uuid'] in tcgPrices["data"].keys():
-        price = tcgPrices["data"][card["uuid"]]
-        return float(price[max(price.keys())])
-    elif card['uuid'] in ckPrices["data"].keys():
-        price = ckPrices["data"][card["uuid"]]
-        return float(price[max(price.keys())])
-    return 0
-
-
-def main(args,db):
-    if args is None:
-        return
-    
-    file = args
-    d = Deck(file.split('.')[0],file,db=db)
-    if ".json" not in file:
-        d.exportJSON(file.split('.')[0]+".json")
-        d1 = Deck("",file.split('.')[0]+".json")
+def insertPrices(deck):
+    if type(deck) is Deck:
+        c = deck.data.copy()
     else:
-        d1 = Deck("",file)
-    
-    with open(homeDir+"/decks/"+file.split('.')[0]+"-price-comparison.csv",'w+',newline='') as f:
-        fieldNames = ["Name","Old Set","Old Price","New Set","New Price", "Variance"]
-        csvWriter = csv.DictWriter(f,fieldnames=fieldNames)
-
-        for card in d.cards.keys():
-            getCheapestPrinting(card,db)
-
-        rows = [{}]
-        for x in fieldNames:
-            rows[0][x]=x
-
-        for card in d.cards.keys():
-            p = getPrice(card)
-            if p == 0:
-                print(f"No price found for {str(card)}")
-            rows.append({"Name":card['name'],
-                         "Old Set":"",
-                         "Old Price":0,
-                         "New Set":card['setCode'],
-                         "New Price":p,
-                         "Variance":""})
-
-        r=1
-        for card in d1.cards.keys():
-            p = getPrice(card)
-            if p == 0:
-                print(f"No price found for {str(card)}")
-            rows[r]["Old Set"]=card['setCode']
-            rows[r]["Old Price"]=p
-            rows[r]["Variance"]=rows[r]['New Price']-p
-            if r+1 < len(rows):
-                r+=1
-    
-        rows.append({})
-        for x in fieldNames:
-            rows[-1][x] = ""
-            
-        rows[-1]['Old Price'] = sum(float(rows[x]['Old Price']) for x in range(1,len(rows)-1))
-        rows[-1]['New Price'] = sum(float(rows[x]['New Price']) for x in range(1,len(rows)-1))
-        rows[-1]['Variance'] = rows[-1]['New Price']-rows[-1]['Old Price']
-
-        for x in rows:
-            csvWriter.writerow(x)
-
-        d.exportJSON(file.split('.')[0]+"-cheapest.json")
-        d.exportText(file.split('.')[0]+"-cheapest.txt")
-                
-                    
-
-
-if __name__ == "__main__":
-    args  = str(sys.argv[1]) if len(sys.argv)>1 else str(input("Enter filename: "))
-    db = connectDB().cursor()
-    main(args,db)
-    
+        c = deck.copy()
+    p = deckPrices(c)
+    p = p.set_index(c.index)
+    return pd.concat([c,p],axis=1)
