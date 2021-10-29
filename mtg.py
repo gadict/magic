@@ -1,13 +1,11 @@
-import sqlite3
-from sqlite3 import Error
 import pandas as pd
 import numpy as np
 import json
 import re
 import os
 import requests
-
 import sqlalchemy as sql
+from sqlalchemy.sql.expression import select
 from mtg import *
 
 homeDir = str(os.path.expanduser("~/documents/magic"))
@@ -18,17 +16,51 @@ conn = engine.connect()
 meta = sql.MetaData()
 
 cards = sql.Table("cards",meta,autoload=True,autoload_with=engine)
+sets = sql.Table('sets',meta,autoload=True,autoload_with=engine)
 legalities = sql.Table("legalities",meta,autoload=True,autoload_with=engine)
 
+def set_from_code(code):
+    query = sql.select(
+        [sets]
+    ).where(
+        sets.code == code
+    )
+    results = conn.execute(query).fetchone()
+    return results
 
-def connectDB(path=homeDir+"/data/AllPrintings.sqlite"):
-    connection = None
-    try:
-        connection = sqlite3.connect(path)
-    except Error as e:
-        print(f"The error '{e}' occurred.")
 
-    return connection
+def formatLegal(format):
+    """
+    SELECT * 
+    FROM cards 
+    LEFT JOIN legalities 
+    ON legalities.uuid == cards.uuid 
+    WHERE legalities.format='{format}' 
+    AND legalities.status='Legal'
+    ORDER BY name
+    """
+    query = sql.select([cards,legalities])
+    query = query.select_from(
+        cards.join(
+            legalities, 
+            cards.c.uuid == legalities.c.uuid
+        )
+        ).where(
+            sql.and_(
+                legalities.c.format == format,
+                legalities.c.status == "Legal"
+            )
+    ).order_by(cards.c.name)
+
+    df = pd.read_sql(query,conn)
+    #Drop duplicate cards by name, then drop cards with no rules text
+    df = df.drop_duplicates('name')
+    df = df.dropna(axis=0,subset=['text'])
+    #The join inserts matching columns, in this case just UUID and ID, this probably isn't the optimal
+    #way of querying for legality, but it works and this isn't terribly expensive to do after the fact.
+    df.drop(['uuid_1','id_1'],axis=1,inplace=True)
+    return df
+
 def compareColors(c1,c2):
     if c1 is None:
         return True
@@ -56,47 +88,52 @@ def bySubType(l,t):
 def byColor(l,c):
     return l.loc[l.colors.str.contains(c),:]
 
-def find_card(name,setCode="%",db=connectDB()):
+def find_card(name,setCode="%"):
         quote = "\"" if "\'" in name else "\'"
-        query = f"""
-            SELECT * FROM cards 
-            WHERE name LIKE {quote}{name}%{quote} 
-            AND setCode LIKE '{setCode}' 
-            AND availability LIKE '%paper%'
-            AND borderColor IN ('black','white');
-            """
-        possibilities = pd.read_sql(query,db)
+        """
+        SELECT * FROM cards 
+        WHERE name LIKE {quote}{name}%{quote} 
+        AND setCode LIKE '{setCode}' 
+        AND availability LIKE '%paper%'
+        AND borderColor IN ('black','white');
+        """
+        query = sql.select(
+            [cards]
+        ).where(
+            sql.and_(
+                cards.c.name.like(f"{name}%"),
+                cards.c.setCode.like(setCode),
+                cards.c.availability.contains("paper"),
+                cards.c.borderColor.in_(['black','white'])
+            )
+        )
+        possibilities = pd.read_sql(query,conn)
         if not possibilities.empty:
             return possibilities
         else:
             return None
 
-def set_from_code(code, db=connectDB()):
-    query = f"SELECT name FROM sets WHERE code='{code}';"
-    db = db.cursor()
-    db.execute(query)
-    return db.fetchone()[0]
+    
 class Card:
-    def __init__(self, name=None, setCode="%", db=connectDB()):
+    def __init__(self, name=None, setCode="%"):
         self.data=None
         self.verified = False
         if name:
-            self.verifyCard(name,setCode,db)
+            self.verifyCard(name,setCode)
 
     def Verified(self):
         return self.verified
 
-    def verifyCard(self,name,setCode="%",db=connectDB()):
+    def verifyCard(self,name,setCode="%"):
         self.verified=False
-        possibilities = find_card(name,setCode,db)
+        possibilities = find_card(name,setCode)
         if possibilities is not None:
             self.data = possibilities.iloc[0].copy()
             self.data.loc['isFoil']=False
             self.data.loc['category']=None
             self.verified = True
         else:
-            setCode="%"
-            possibilities = find_card(name,setCode,db)
+            possibilities = find_card(name)
             if possibilities is not None:
                 self.data = possibilities.iloc[0].copy()
                 self.data.loc['isFoil']=False
@@ -199,7 +236,7 @@ class Deck:
         for x in range(len(cardData)):
             cardData[x]['qty'] = int(data[x]['qty'])
             cardData[x]['isFoil'] = True if data[x]['isFoil'] else False
-            cardData[x]['category'] = data[x]['category'] if data[x]['category'] else ""
+            cardData[x]['category'] = data[x]['category'] if data[x]['category'] else None
         
 
 

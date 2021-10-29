@@ -1,5 +1,5 @@
 import re
-from mtg import connectDB,Card, Deck,nonland
+from mtg import Card,Deck,nonland
 def categorize(deck,quickFilters=[]):
   if type(deck) is Deck:
     data = deck.data
