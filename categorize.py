@@ -28,7 +28,7 @@ def categorize(deck,quickFilters=[]):
 
   return data
 
-def catCard(card):
+def catCard(card,quickFilters=[]):
   categories = {}
   for x in patterns.keys():
       categories[x] = []
@@ -37,6 +37,12 @@ def catCard(card):
     data = card.data
   else:
     data = card
+
+  for x in quickFilters:
+    if type(x) is list:
+      patterns[x[0]] = re.compile(x[1], re.IGNORECASE)
+    else:
+      patterns[x] = re.compile(x, re.IGNORECASE)
 
   for cat in categories.keys():
     p = patterns[cat]

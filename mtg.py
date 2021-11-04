@@ -53,12 +53,6 @@ def formatLegal(format):
     ).order_by(cards.c.name)
 
     df = pd.read_sql(query,conn)
-    #Drop duplicate cards by name, then drop cards with no rules text
-    df = df.drop_duplicates('name')
-    df = df.dropna(axis=0,subset=['text'])
-    #The join inserts matching columns, in this case just UUID and ID, this probably isn't the optimal
-    #way of querying for legality, but it works and this isn't terribly expensive to do after the fact.
-    df.drop(['uuid_1','id_1'],axis=1,inplace=True)
     return df
 
 def compareColors(c1,c2):
@@ -80,13 +74,13 @@ def land(l):
     return l.loc[l.types == 'Land',:]
 
 def byType(l,t):
-    return l.loc[l.types.str.contains(t),:]
+    return l.loc[l.types.str.contains(t) == True,:]
 
-def bySubType(l,t):
-    return l.loc[l.subtypes.str.contains(t),:]
+def bySubtype(l,t):
+    return l.loc[l.subtypes.str.contains(t) == True,:]
     
 def byColor(l,c):
-    return l.loc[l.colors.str.contains(c),:]
+    return l.loc[l.colors.str.contains(c) == True,:]
 
 def find_card(name,setCode="%"):
         quote = "\"" if "\'" in name else "\'"
@@ -253,7 +247,7 @@ class Deck:
                 name = data['name']
                 code = f" ({data['setCode']})"
                 foil = "*F*" if data['isFoil'] else ""
-                category = f"[{data['category']}]\n" if data['category'] else "\n"
+                category = f"[{data['category']}]\n" if data['category'] is not None else "\n"
                 f.write(qty+name+code+foil+category)
 
     def index(self,name,setCode):

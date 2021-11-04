@@ -3,12 +3,16 @@ from sentence_transformers import SentenceTransformer as ST
 from sentence_transformers.util import pairwise_dot_score
 from categorize import *
 import pandas as pd
-import torch
+
 
 def dataset():
     data = formatLegal("commander")
+    #Drop duplicate cards by name, then drop cards with no rules text
     data = data.drop_duplicates('name')
-    data = data.dropna(axis=0, subset=['text'])
+    data = data.dropna(axis=0,subset=['text'])
+    #The join inserts matching columns, in this case just UUID and ID, this probably isn't the optimal
+    #way of querying for legality, but it works and this isn't terribly expensive to do after the fact.
+    data.drop(['uuid_1','id_1'],axis=1,inplace=True)
     return data
 
 def cachedEmbeds(file=f"{homeDir}/data/text/text_embeds.json"):
@@ -23,10 +27,11 @@ def findSimilarCards(card,transformer,cardDataset,embeds,thresh=0.8,byCategory=F
     mask = cardDataset.loc[cardDataset.score >= thresh,:].index
     cardDataset = cardDataset.loc[mask,:]
     if byColors:
-        mask = cardDataset['colors'].apply(lambda colors: compareColors(colors,card['colorIdentity']))
+        mask = cardDataset['colorIdentity'].apply(lambda colors: compareColors(colors,card['colorIdentity']))
         cardDataset = cardDataset.loc[mask,:]
     if byCategory:
-        card = catCard(card)
+        if card['category'] != None:
+            card = catCard(card)
         cardDataset = categorize(cardDataset)
         mask = cardDataset.loc[cardDataset.category == card.category,:].index
         cardDataset = cardDataset.loc[mask,:]
